@@ -10,13 +10,33 @@ import functools
 from PyQt5 import QtCore, QtGui, QtWidgets
 from utils import qt
 from windows.addCityDialog import AddCityDialog
+from windows.addKeyDialog import AddKeyDialog
+from collectioner.spyder import SpyderBaidu
+from PyQt5.QtCore import *
+from PyQt5.QtWidgets import *
+from PyQt5.QtGui import *
+import copy
+import xlwt
 
 
 class Ui_MainWindow(QtWidgets.QMainWindow):
     def __init__(self, parent=None):
         super(Ui_MainWindow, self).__init__(parent)
 
+        self.result_tableview_model = QtGui.QStandardItemModel(10, 7)
+        self.city_datalist = []
+        self.city_listview_model = QtCore.QStringListModel()
+        self.key_dialog_showed = True
         self.city = []
+
+        # 初始化百度地图爬虫
+        self.spyder = SpyderBaidu()
+
+        #
+        self.thread_ = None
+
+        self.key_listview_model = QtCore.QStringListModel()
+        self.key_datalist = []
 
     def setupUi(self, MainWindow):
         MainWindow.setObjectName("MainWindow")
@@ -187,16 +207,34 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
         # 添加城市按钮事件
         self.addcity_button.clicked.connect(self.add_city)
 
+        # 添加行业词按钮事件
+        self.addkey_button.clicked.connect(self.add_key)
+
+        # 开始查询
+        self.start_button.clicked.connect(self.start_spyder)
+
+        # 停止查询
+        self.stop_button.clicked.connect(self.stop_spyder)
+
+        # 导出excel
+        self.toexcel_button.clicked.connect(self.to_excel)
+
+        # 导出txt
+        self.totxt_button.clicked.connect(self.to_txt)
+
+        # 清空
+        self.clear_button.clicked.connect(self.clear)
+
     def init_view(self):
         self.init_result_table()
         self.init_city_list()
+        self.init_key_list()
 
     def init_result_table(self):
         """
         初始化查询结果表格
         :return:
         """
-        self.result_tableview_model = QtGui.QStandardItemModel(10, 7)
         # 设置水平方向四个头标签文本内容
         self.result_tableview_model.setHorizontalHeaderLabels(['店铺名', '联系电话', '地图坐标', '地址', '区域', '行业', '来源网址'])
         self.result_tableview.setModel(self.result_tableview_model)
@@ -213,8 +251,6 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
         """
 
         # 初始化城市名称列表
-        self.city_listview_model = QtCore.QStringListModel()
-        self.city_datalist = []
         self.city_listview_model.setStringList(self.city_datalist)
         self.city_listview.setModel(self.city_listview_model)
 
@@ -230,16 +266,9 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
         if not self.city_dialog_showed:
             # 窗口打开，不允许再次打开添加该窗口
             self.city_dialog_showed = True
-            print('---', self.city_datalist)
             dialog = AddCityDialog(self)
             dialog.setupUi(dialog)
             dialog.show()
-
-            print('+++', self.city_datalist)
-
-        # AddCityDialog.
-
-        self.city_listview_model.setStringList(self.city_datalist)
 
     def update_city_list(self):
         """
@@ -248,3 +277,149 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
         """
         self.city_listview_model.setStringList(self.city_datalist)
         self.city_listview.setModel(self.city_listview_model)
+
+    def init_key_list(self):
+        """
+        初始化行业词列表
+        :return:
+        """
+        # 初始化城市名称列表
+        self.key_listview_model.setStringList(self.key_datalist)
+        self.key_listview.setModel(self.key_listview_model)
+
+        # 添加城市的弹窗状态
+        self.key_dialog_showed = False
+
+    def add_key(self):
+        if not self.key_dialog_showed:
+            # 窗口打开，不允许再次打开添加该窗口
+            dialog = AddKeyDialog(self)
+            dialog.setupUi(dialog)
+            dialog.show()
+
+    def update_key_list(self):
+        """
+        更新行业词列表的显示
+        :return:
+        """
+        self.key_listview_model.setStringList(self.key_datalist)
+        self.key_listview.setModel(self.key_listview_model)
+
+    class WorkThread(QThread):
+        trigger = pyqtSignal()
+
+        def __int__(self):
+            super(Ui_MainWindow.WorkThread, self).__init__()
+
+        def run(self):
+            self.parent().spyder.run(copy.copy(self.parent().city_datalist), copy.copy(self.parent().key_datalist),
+                                     thread=self)
+            self.trigger.emit()
+
+    def start_spyder(self):
+        """
+        开始查询的按钮事件
+        :return:
+        """
+        # 清空之前的查询记录
+        self.spyder.shop_list = []
+        self.init_result_table()
+
+        work_thread = self.WorkThread()
+        work_thread.setParent(self)
+        work_thread.trigger.connect(self.update_result_table)
+        self.thread_ = work_thread
+        work_thread.start()
+
+    def clear_result_table(self):
+        """
+        清空搜索结果表格
+        :return:
+        """
+        pass
+
+    def update_result_table(self):
+        """
+        更新搜索结果表格
+        :return:
+        """
+        for i in range(0, len(self.spyder.shop_list)):
+            self.result_tableview_model.setItem(i, 0, QStandardItem(self.spyder.shop_list[i]['name']))
+            self.result_tableview_model.setItem(i, 1, QStandardItem(self.spyder.shop_list[i]['tel']))
+            self.result_tableview_model.setItem(i, 2, QStandardItem('point'))
+            self.result_tableview_model.setItem(i, 3, QStandardItem(self.spyder.shop_list[i]['address']))
+            self.result_tableview_model.setItem(i, 4, QStandardItem(self.spyder.shop_list[i]['quyu']))
+            self.result_tableview_model.setItem(i, 5, QStandardItem(self.spyder.shop_list[i]['key']))
+            self.result_tableview_model.setItem(i, 6, QStandardItem('url'))
+
+    def stop_spyder(self):
+        """
+        停止查询的按钮事件
+        :return:
+        """
+        print(1)
+        try:
+            self.thread_.quit()
+            self.thread_.wait()
+        except Exception as e:
+            print(e)
+
+    def to_excel(self):
+        """
+        导出到excel
+        :return:
+        """
+        try:
+            wb = xlwt.Workbook()
+            sheet = wb.add_sheet('sheet1')
+            for i in range(0, len(self.spyder.shop_list)):
+                sheet.write(i, 0, self.spyder.shop_list[i]['name'])
+                sheet.write(i, 1, self.spyder.shop_list[i]['tel'])
+                sheet.write(i, 2, 'point')
+                sheet.write(i, 3, self.spyder.shop_list[i]['address'])
+                sheet.write(i, 4, self.spyder.shop_list[i]['quyu'])
+                sheet.write(i, 5, self.spyder.shop_list[i]['key'])
+                sheet.write(i, 6, 'url')
+
+            # 获取文件保存路径
+            file_path = QFileDialog.getSaveFileName(self, 'save file', "saveFile",
+                                                    "excel files (*.xls);;all files(*.*)")
+            # 保存excel文件
+            wb.save(file_path[0])
+        except PermissionError:
+            QMessageBox.critical(self, '错误', '没有文件写入权限，请重新选择保存路径或使用管理员权限重启本程序！')
+
+    def to_txt(self):
+        """
+        导出到txt
+        :return:
+        """
+
+        try:
+            # 获取文件保存路径
+            file_path = QFileDialog.getSaveFileName(self, 'save file', "saveFile",
+                                                    "excel files (*.txt);")
+            file = open(file_path[0], 'w')
+            for i in range(0, len(self.spyder.shop_list)):
+                file.write(self.spyder.shop_list[i]['name'] + ' '
+                           + self.spyder.shop_list[i]['tel'] + ' '
+                           + 'point' + ' '
+                           + self.spyder.shop_list[i]['address'] + ' '
+                           + self.spyder.shop_list[i]['quyu'] + ' '
+                           + self.spyder.shop_list[i]['key'] + ' '
+                           + 'url\n')
+            file.close()
+        except PermissionError:
+            QMessageBox.critical(self, '错误', '没有文件写入权限，请重新选择保存路径或使用管理员权限重启本程序！')
+
+    def clear(self):
+        """
+        清空所有数据
+        :return:
+        """
+        self.spyder.shop_list = []
+        self.city_datalist = []
+        self.key_datalist = []
+        self.init_key_list()
+        self.init_city_list()
+        self.init_result_table()
