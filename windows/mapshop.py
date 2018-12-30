@@ -17,6 +17,9 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 import copy
 import xlwt
+import logging
+import time
+import os
 
 
 class Ui_MainWindow(QtWidgets.QMainWindow):
@@ -37,6 +40,10 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
 
         self.key_listview_model = QtCore.QStringListModel()
         self.key_datalist = []
+
+        # 创建一个logger
+        self.logger = logging.getLogger()
+        self.init_log()
 
     def setupUi(self, MainWindow):
         MainWindow.setObjectName("MainWindow")
@@ -346,7 +353,7 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
         for i in range(0, len(self.spyder.shop_list)):
             self.result_tableview_model.setItem(i, 0, QStandardItem(self.spyder.shop_list[i]['name']))
             self.result_tableview_model.setItem(i, 1, QStandardItem(self.spyder.shop_list[i]['tel']))
-            self.result_tableview_model.setItem(i, 2, QStandardItem('point'))
+            self.result_tableview_model.setItem(i, 2, QStandardItem(self.spyder.shop_list[i]['point']))
             self.result_tableview_model.setItem(i, 3, QStandardItem(self.spyder.shop_list[i]['address']))
             self.result_tableview_model.setItem(i, 4, QStandardItem(self.spyder.shop_list[i]['quyu']))
             self.result_tableview_model.setItem(i, 5, QStandardItem(self.spyder.shop_list[i]['key']))
@@ -357,10 +364,16 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
         停止查询的按钮事件
         :return:
         """
-        print(1)
+        self.logger.info('中止查询')
         try:
+            # 关闭线程
             self.thread_.quit()
-            self.thread_.wait()
+            self.thread_ = None
+
+            # 创建新的爬虫实例,切断残留“信息抓取线程”对已抓取列表的修改
+            temp = copy.copy(self.spyder.shop_list)
+            self.spyder = SpyderBaidu()
+            self.spyder.shop_list = copy.copy(temp)
         except Exception as e:
             print(e)
 
@@ -375,7 +388,7 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
             for i in range(0, len(self.spyder.shop_list)):
                 sheet.write(i, 0, self.spyder.shop_list[i]['name'])
                 sheet.write(i, 1, self.spyder.shop_list[i]['tel'])
-                sheet.write(i, 2, 'point')
+                sheet.write(i, 2, self.spyder.shop_list[i]['point'])
                 sheet.write(i, 3, self.spyder.shop_list[i]['address'])
                 sheet.write(i, 4, self.spyder.shop_list[i]['quyu'])
                 sheet.write(i, 5, self.spyder.shop_list[i]['key'])
@@ -423,3 +436,20 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
         self.init_key_list()
         self.init_city_list()
         self.init_result_table()
+        self.result_tableview_model.removeRows(0, self.result_tableview_model.rowCount())
+
+    def init_log(self):
+        self.logger.setLevel(logging.INFO)  # Log等级总开关
+        # 第二步，创建一个handler，用于写入日志文件
+        # rq = time.strftime('%Y%m%d%H%M', time.localtime(time.time()))
+        log_path = os.path.dirname('log/')
+        log_name = log_path + '/' + 'mapshop_log' + '.log'
+        print(log_name)
+        logfile = log_name
+        fh = logging.FileHandler(logfile, mode='w')
+        fh.setLevel(logging.DEBUG)  # 输出到file的log等级的开关
+        # 第三步，定义handler的输出格式
+        formatter = logging.Formatter("%(asctime)s - %(filename)s[line:%(lineno)d] - %(levelname)s: %(message)s")
+        fh.setFormatter(formatter)
+        # 第四步，将logger添加到handler里面
+        self.logger.addHandler(fh)

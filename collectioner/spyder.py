@@ -29,7 +29,7 @@ class SpyderBaidu:
 
         self.shop_list = []
 
-        # 第一步，创建一个logger
+        # 创建一个logger
         self.logger = logging.getLogger()
         self.init_log()
 
@@ -38,7 +38,7 @@ class SpyderBaidu:
         # 第二步，创建一个handler，用于写入日志文件
         rq = time.strftime('%Y%m%d%H%M', time.localtime(time.time()))
         log_path = os.path.dirname('log/')
-        log_name = log_path+'/' + rq + '.log'
+        log_name = log_path + '/' + 'spyder_log' + '.log'
         print(log_name)
         logfile = log_name
         fh = logging.FileHandler(logfile, mode='w')
@@ -98,6 +98,13 @@ class SpyderBaidu:
 
                         pattern = r'(?<="phone":").+?(?=")'
                         phone = re.findall(pattern, r)
+                        pattern = r'(?<="point":{).+?(?=})'
+                        point = re.findall(pattern, r)
+                        try:
+                            point_xy = point[0].split(',')
+                            point = "(" + point_xy[0].split(':')[1] + ',' + point_xy[1].split(':')[1] + ')'
+                        except IndexError:
+                            point = 'None'
                         try:
                             if phone[0] and '",' != phone[0]:
                                 phone_list = phone[0].split(sep=',')
@@ -105,7 +112,7 @@ class SpyderBaidu:
                                     if re.match('1', number):
                                         shop = {'name': name[0], 'address': strlist_join(address.split(' ')[2:]),
                                                 'quyu': address.split(' ')[1],
-                                                'tel': number, 'key': _key}
+                                                'tel': number, 'key': _key, 'point': point}
                                         print(address + ',' + number)
                                         self.shop_list.append(shop)
                                         if thread is not None:
